@@ -1,0 +1,206 @@
+name: '🤖 SARIF自动修复Agent'
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      min_severity:
+        description: '最小严重性等级 (low, medium, high, critical)'
+        required: true
+        default: 'medium'
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+          - critical
+
+  # 当SARIF文件上传时触发
+  upload:
+    paths:
+      - '**/*.sarif'
+
+  # PR评论触发
+  issue_comment:
+    types: [created]
+
+  # Pull Request触发
+  pull_request:
+    paths:
+      - '.github/workflows/*.yml'
+      - '.github/workflows/*.yaml'
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  analyze-and-fix:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 设置Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📦 安装uv
+        run: |
+          pip install uv
+
+      - name: 📦 安装依赖 (使用uv)
+        run: |
+          uv pip install --system -e .
+
+      - name: 📂 创建工作目录
+        run: |
+          mkdir -p ./sarif-files
+          mkdir -p ./workflows
+          mkdir -p ./fixes
+          mkdir -p ./reports
+
+      - name: 🔍 查找SARIF文件
+        id: find-sarif
+        run: |
+          # 查找所有SARIF文件
+          find . -name "*.sarif" -type f > sarif_files.txt
+          echo "sarif_count=$(wc -l < sarif_files.txt)" >> $GITHUB_OUTPUT
+          echo "找到 $(wc -l < sarif_files.txt) 个SARIF文件"
+
+          if [ $(wc -l < sarif_files.txt) -eq 0 ]; then
+            echo "❌ 未找到SARIF文件，请确保上传了CodeQL扫描结果"
+            exit 1
+          fi
+
+      - name: 📋 列出SARIF文件
+        run: |
+          echo "📄 发现的SARIF文件:"
+          cat sarif_files.txt
+
+      - name: 🔑 设置Minimax API密钥
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          if [ -z "$MINIMAX_API_KEY" ]; then
+            echo "❌ 未设置MINIMAX_API_KEY密钥"
+            echo "请在仓库设置中添加名为MINIMAX_API_KEY的密钥"
+            exit 1
+          fi
+          echo "✅ Minimax API密钥已设置"
+
+      - name: 🤖 运行自动修复引擎
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        run: |
+          echo "🚀 启动SARIF自动修复引擎..."
+
+          # 使用命令行工具运行
+          sarif-fix \
+            --sarif-dir ./sarif-files \
+            --workflows-dir ./.github/workflows \
+            --min-severity medium \
+            --dry-run \
+            --output-dir ./output
+
+      - name: 📊 生成修复摘要
+        run: |
+          echo "## 🤖 SARIF自动修复摘要" > fix_summary.md
+          echo "" >> fix_summary.md
+          echo "### 📈 修复统计" >> fix_summary.md
+          echo "- 时间: $(date)" >> fix_summary.md
+          echo "- SARIF文件数: ${{ steps.find-sarif.outputs.sarif_count }}" >> fix_summary.md
+          echo "" >> fix_summary.md
+
+          if [ -f "auto_fix_report.json" ]; then
+            echo "### ✅ 修复结果" >> fix_summary.md
+            python -c "
+            import json
+            with open('auto_fix_report.json', 'r') as f:
+                report = json.load(f)
+            print(f'- 总漏洞数: {report[\"total_vulnerabilities\"]}')
+            fixes = report['fixes']
+            applied = sum(1 for f in fixes if f['applied'])
+            failed = len(fixes) - applied
+            print(f'- 成功修复: {applied}')
+            print(f'- 修复失败: {failed}')
+            print(f'- 修复率: {(applied/len(fixes)*100):.1f}%' if fixes else '- 修复率: 0%')
+            " >> fix_summary.md
+          else
+            echo "### ⚠️ 修复报告未生成" >> fix_summary.md
+          fi
+
+      - name: 💬 发布评论 (PR触发)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('fix_summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: 📝 创建Issue (手动触发)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('fix_summary.md', 'utf8');
+
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🤖 SARIF自动修复报告 - ${new Date().toISOString().split('T')[0]}`,
+              body: summary,
+              labels: ['security', 'auto-fix', 'sarif']
+            });
+
+      - name: 📤 上传修复报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sarif-fix-reports
+          path: |
+            auto_fix_report.json
+            fix_summary.md
+            chain_of_thought_*.json
+          retention-days: 30
+
+      - name: 📊 上传修复后的工作流文件
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fixed-workflows
+          path: .github/workflows/
+          retention-days: 30
+
+      - name: 🔔 通知成功
+        if: success()
+        run: |
+          echo "✅ SARIF自动修复完成！"
+          echo "📄 详细报告已生成，请查看artifacts"
+          echo "🔍 修复后的工作流文件请查看 'fixed-workflows' artifact"
+
+      - name: 🔔 通知失败
+        if: failure()
+        run: |
+          echo "❌ SARIF自动修复失败"
+          echo "🔍 请检查日志以了解详细错误信息"
+          echo "💡 可能的原因:"
+          echo "  - SARIF文件格式不正确"
+          echo "  - Minimax API密钥无效"
+          echo "  - 工作流文件无法解析"

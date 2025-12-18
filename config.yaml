@@ -1,0 +1,67 @@
+# SARIF自动修复Agent配置文件
+#
+# 配置说明:
+# 1. Minimax API配置 (必需)
+#    - api_key: 你的Minimax API密钥
+#    - base_url: API地址 (国内: api.minimaxi.com, 国际: api.minimax.chat)
+#    - model: 使用的AI模型
+#
+# 2. 其他配置项均为可选
+
+# Minimax AI API配置
+minimax:
+  # 你的Minimax API密钥 (必需)
+  # 可选配置方式：
+  #   1. 直接在此处填写 (推荐)
+  #   2. 通过环境变量 MINIMAX_API_KEY 覆盖
+  #   3. 通过命令行参数 --api-key 覆盖
+  api_key: "${MINIMAX_API_KEY}"  # 请设置环境变量或直接填写
+
+  # API基础地址
+  # 国内用户: https://api.minimaxi.com/v1/text/chatcompletion_v2
+  # 国际用户: https://api.minimax.chat/v1/text/chatcompletion_v2
+  base_url: "https://api.minimaxi.com/v1/text/chatcompletion_v2"
+
+  # 使用的AI模型 (可选值: MiniMax-M2, deepseek-chat, deepseek-coder, abab6.5-chat, abab6.5-gpt)
+  model: "MiniMax-M2"
+
+  # 请求参数 (可选)
+  temperature: 0.3  # 温度参数，控制输出随机性 (0.0-1.0)
+  max_tokens: 4000  # 最大生成令牌数
+
+# 漏洞过滤配置
+vulnerability_filter:
+  min_severity: "medium"  # 可选: low, medium, high, critical
+  exclude_rules: []  # 需要排除的规则ID列表
+  include_rules: []  # 只包含的规则ID列表（空列表表示包含所有）
+
+# 修复配置
+fixing:
+  apply_fixes: false  # 是否自动应用修复（建议先设为false进行预览）
+  create_backup: true  # 是否创建备份文件
+  backup_directory: "./backups"
+  output_directory: "./fixes"
+
+# 报告配置
+reporting:
+  output_formats: ["json", "markdown", "html"]  # 可选: json, markdown, html
+  include_chain_of_thought: true  # 是否包含思维链
+  detailed_output: true  # 是否包含详细信息
+
+# SARIF文件配置
+sarif:
+  scan_res_directory: "./scan-res"
+  workflows_directory: "./workflows"
+
+# GitHub Action配置
+github_action:
+  enable_auto_comment: true  # 是否在PR中自动评论
+  create_issue_for_failures: true  # 失败时是否创建Issue
+  upload_artifacts: true  # 是否上传artifacts
+  artifact_retention_days: 30
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "sarif_fix.log"

@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+sarif_fix.log
+
+# 输出目录
+output/
+reports/
+fixes/
+backups/
+
+# 测试和临时文件
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# 环境变量
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 项目特定
+*.sarif
+VWBench/
+test_integration.py
+
+# 配置文件（包含敏感信息）
+# config.yaml  # 如果需要保留模板，可以取消注释这行
+
+# uv
+.uv/
+
