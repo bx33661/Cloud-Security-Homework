@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Minimax AI API集成模块
-提供与Minimax API的自定义接入，用于生成智能修复建议和思维链推理
-"""
 
 import json
 import logging
@@ -16,13 +12,11 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 class AIModel(Enum):
-    """可用的AI模型"""
     MINIMAX_M2 = "MiniMax-M2"
     DEEPSEEK_CHAT = "deepseek-chat"
     DEEPSEEK_CODING = "deepseek-coder"
@@ -32,7 +26,6 @@ class AIModel(Enum):
 
 @dataclass
 class AIRequest:
-    """AI请求配置"""
     model: AIModel
     messages: List[Dict[str, str]]
     temperature: float = 0.7
@@ -42,7 +35,6 @@ class AIRequest:
 
 @dataclass
 class AIResponse:
-    """AI响应结果"""
     content: str
     model: str
     usage: Dict[str, int]
@@ -51,15 +43,12 @@ class AIResponse:
 
 
 class ChainOfThoughtLogger:
-    """思维链记录器"""
-
     def __init__(self):
         self.thought_chain: List[Dict[str, Any]] = []
         self.current_step = 0
 
     def add_step(self, step_name: str, input_data: Any, output_data: Any,
                 reasoning: str, confidence: float = 1.0, verbose: bool = False) -> None:
-        """添加思维链步骤（静默模式，不输出日志）"""
         step = {
             "step": self.current_step,
             "timestamp": time.time(),
@@ -73,9 +62,7 @@ class ChainOfThoughtLogger:
         self.current_step += 1
 
     def _make_serializable(self, obj: Any) -> Any:
-        """递归地将对象转换为可序列化的格式"""
         if isinstance(obj, AIResponse):
-            # 将AIResponse对象转换为字典
             return {
                 "content": obj.content,
                 "model": obj.model,
@@ -88,23 +75,19 @@ class ChainOfThoughtLogger:
         elif isinstance(obj, (list, tuple)):
             return [self._make_serializable(item) for item in obj]
         elif hasattr(obj, '__dict__'):
-            # 处理其他自定义对象
             return str(obj)
         else:
             return obj
 
     def export_to_dict(self) -> Dict[str, Any]:
-        """导出思维链为字典"""
-        # 转换步骤数据，确保所有对象都可序列化
         serializable_steps = [self._make_serializable(step) for step in self.thought_chain]
-        
+
         return {
             "total_steps": len(self.thought_chain),
             "steps": serializable_steps
         }
 
     def export_to_json(self, file_path: str) -> None:
-        """导出思维链到JSON文件"""
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(self.export_to_dict(), f, indent=2, ensure_ascii=False)
 
@@ -112,24 +95,13 @@ class ChainOfThoughtLogger:
 
 
 class MinimaxClient:
-    """Minimax API客户端"""
-
     def __init__(self, api_key: str, base_url: str = "https://api.minimaxi.com/v1/text/chatcompletion_v2",
                  model: AIModel = AIModel.MINIMAX_M2):
-        """
-        初始化Minimax客户端
-
-        Args:
-            api_key: API密钥
-            base_url: API基础URL
-            model: 使用的AI模型
-        """
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
         self.chain_logger = ChainOfThoughtLogger()
 
-        # 配置HTTP会话和重试策略
         self.session = requests.Session()
         retry_strategy = Retry(
             total=3,
@@ -140,7 +112,6 @@ class MinimaxClient:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
-        # 设置请求头
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -150,22 +121,10 @@ class MinimaxClient:
 
     def chat(self, messages: List[Dict[str, str]], temperature: float = 0.7,
              max_tokens: int = 4000) -> AIResponse:
-        """
-        发送聊天请求
-
-        Args:
-            messages: 消息列表
-            temperature: 温度参数
-            max_tokens: 最大令牌数
-
-        Returns:
-            AI响应结果
-        """
-        # 只输出关键信息
         user_msg = next((msg.get("content", "") for msg in messages if msg.get("role") == "user"), "")
         if user_msg:
             logger.info(f"💬 发送请求 ({self.model.value})...")
-        
+
         self.chain_logger.add_step(
             "API请求准备",
             {"messages": messages, "messages_count": len(messages), "temperature": temperature, "max_tokens": max_tokens},
@@ -180,11 +139,10 @@ class MinimaxClient:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": True  # 启用流式输出
+            "stream": True
         }
 
         try:
-            # 静默记录步骤
             self.chain_logger.add_step(
                 "发送API请求",
                 {"url": self.base_url},
@@ -194,7 +152,6 @@ class MinimaxClient:
                 verbose=False
             )
 
-            # 流式请求
             response = self.session.post(
                 self.base_url,
                 headers=self.headers,
@@ -204,28 +161,26 @@ class MinimaxClient:
             )
 
             response.raise_for_status()
-            
-            # 流式处理响应
+
             content = ""
             usage = {}
             finish_reason = "stop"
             model_name = self.model.value
-            
+
             logger.info("🤖 AI响应:")
             print("─" * 80)
             sys.stdout.flush()
-            
+
             for line in response.iter_lines():
                 if not line:
                     continue
-                    
+
                 line_text = line.decode('utf-8')
-                # 处理SSE格式: data: {...}
                 if line_text.startswith('data: '):
                     data_str = line_text[6:].strip()
                     if data_str == '[DONE]':
                         break
-                    
+
                     try:
                         data = json.loads(data_str)
                         if "choices" in data and len(data["choices"]) > 0:
@@ -234,11 +189,9 @@ class MinimaxClient:
                             if "content" in delta:
                                 chunk = delta["content"]
                                 content += chunk
-                                # 实时输出，不使用logger避免时间戳
                                 sys.stdout.write(chunk)
                                 sys.stdout.flush()
-                            
-                            # 更新usage和finish_reason
+
                             if "usage" in data:
                                 usage.update(data["usage"])
                             if "finish_reason" in choice and choice["finish_reason"]:
@@ -246,13 +199,12 @@ class MinimaxClient:
                             if "model" in data:
                                 model_name = data["model"]
                     except json.JSONDecodeError as e:
-                        # 忽略解析错误，继续处理下一行
                         continue
-            
-            print()  # 换行
+
+            print()
             print("─" * 80)
             sys.stdout.flush()
-            
+
             self.chain_logger.add_step(
                 "处理API响应",
                 {"status_code": response.status_code},
@@ -305,8 +257,6 @@ class MinimaxClient:
             raise
 
     def _extract_chain_of_thought(self, content: str) -> Optional[str]:
-        """从响应内容中提取思维链"""
-        # 尝试从响应中提取思维链标记的内容
         lines = content.split('\n')
         chain_parts = []
 
@@ -326,15 +276,6 @@ class MinimaxClient:
         return '\n'.join(chain_parts) if chain_parts else None
 
     def analyze_vulnerability(self, vulnerability_data: Dict[str, Any]) -> AIResponse:
-        """
-        分析漏洞并生成修复建议
-
-        Args:
-            vulnerability_data: 漏洞信息
-
-        Returns:
-            AI分析结果
-        """
         self.chain_logger.add_step(
             "漏洞分析开始",
             vulnerability_data,
@@ -344,7 +285,6 @@ class MinimaxClient:
             verbose=False
         )
 
-        # 构建分析提示
         prompt = self._build_vulnerability_analysis_prompt(vulnerability_data)
 
         messages = [
@@ -372,16 +312,6 @@ class MinimaxClient:
         return response
 
     def generate_fix_code(self, workflow_content: str, vulnerability_info: Dict[str, Any]) -> AIResponse:
-        """
-        生成具体的修复代码
-
-        Args:
-            workflow_content: 工作流内容
-            vulnerability_info: 漏洞信息
-
-        Returns:
-            修复代码建议
-        """
         self.chain_logger.add_step(
             "修复代码生成开始",
             {"workflow_length": len(workflow_content), "vulnerability": vulnerability_info},
@@ -391,7 +321,6 @@ class MinimaxClient:
             verbose=False
         )
 
-        # 构建代码修复提示
         prompt = self._build_fix_code_prompt(workflow_content, vulnerability_info)
 
         messages = [
@@ -419,7 +348,6 @@ class MinimaxClient:
         return response
 
     def _build_vulnerability_analysis_prompt(self, vulnerability_data: Dict[str, Any]) -> str:
-        """构建漏洞分析提示"""
         return f"""分析GitHub Action安全漏洞并提供修复方案。
 
 漏洞信息：
@@ -437,7 +365,6 @@ class MinimaxClient:
 请用简洁、结构化的方式输出。"""
 
     def _build_fix_code_prompt(self, workflow_content: str, vulnerability_info: Dict[str, Any]) -> str:
-        """构建代码修复提示"""
         return f"""修复以下GitHub Action工作流的安全漏洞：
 
 当前工作流：
@@ -460,9 +387,7 @@ class MinimaxClient:
 直接输出修复后的YAML代码（包含```yaml代码块）。"""
 
     def get_chain_of_thought(self) -> ChainOfThoughtLogger:
-        """获取思维链记录器"""
         return self.chain_logger
 
     def reset_chain_of_thought(self) -> None:
-        """重置思维链记录"""
         self.chain_logger = ChainOfThoughtLogger()
