@@ -1,5 +1,5 @@
 # SARIF自动修复Agent
-
+1
 基于SARIF漏洞报告的GitHub Action自动修复工具，集成Minimax AI提供智能修复建议。
 
 ## 快速开始
